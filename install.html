@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <title>Instalar aba Agendar</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    .ok { color: #0a7; }
+    .err { color: #b00; }
+    code { background:#f4f4f4; padding:2px 6px; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h3>Instalando integração no CRM…</h3>
+  <div id="log">Iniciando…</div>
+
+  <script src="https://api.bitrix24.com/api/v1/"></script>
+  <script>
+    const logEl = document.getElementById("log");
+    function log(msg, cls) {
+      logEl.className = cls || "";
+      logEl.innerHTML = msg;
+    }
+
+    BX24.init(function () {
+      // Troque se a sua URL do Vercel for diferente
+      const handlerUrl = "https://bitrix-agendamento.vercel.app/indice.html";
+
+      log("Registrando aba no Negócio…<br>Handler: <code>" + handlerUrl + "</code>");
+
+      BX24.callMethod("placement.bind", {
+        PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+        HANDLER: handlerUrl,
+        TITLE: "Agendar"
+      }, function (res) {
+        if (res.error()) {
+          log("Erro: <b>" + res.error() + "</b>", "err");
+        } else {
+          log("Pronto ✅ Agora deve aparecer a aba <b>Agendar</b> dentro do Negócio.", "ok");
+        }
+      });
+    });
+  </script>
+</body>
+</html>
