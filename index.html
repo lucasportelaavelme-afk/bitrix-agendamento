@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <title>Agendar R1/R2</title>
+</head>
+<body>
+  <h2>Agendar reunião</h2>
+
+  <label>Tipo</label>
+  <select id="tipo">
+    <option>R1</option>
+    <option>R2</option>
+    <option>RA</option>
+    <option>Delay R1</option>
+    <option>Delay R2</option>
+  </select>
+
+  <label>Data e hora</label>
+  <input id="inicio" type="datetime-local" />
+
+  <label>Email cliente</label>
+  <input id="email" type="email" />
+
+  <label>Link Meet</label>
+  <input id="meet" type="text" />
+
+  <button onclick="criar()">Criar</button>
+
+  <script src="app.js"></script>
+</body>
+</html>
