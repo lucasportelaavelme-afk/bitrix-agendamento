@@ -1,14 +1,17 @@
-function showMsg(text, cls) {
-  const el = document.getElementById("msg");
-  el.className = cls;
-  el.textContent = text;
+const statusEl = document.getElementById("status");
+const btnCriar = document.getElementById("criar");
+
+function setStatus(msg, cls) {
+  if (!statusEl) return;
+  statusEl.className = cls || "";
+  statusEl.textContent = msg;
 }
 
 function addMinutes(date, mins) {
   return new Date(date.getTime() + mins * 60000);
 }
 
-async function call(method, params) {
+function call(method, params) {
   return new Promise((resolve, reject) => {
     BX24.callMethod(method, params, (res) => {
       if (res.error()) reject(new Error(res.error()));
@@ -17,105 +20,111 @@ async function call(method, params) {
   });
 }
 
-function getDealContext() {
-  // Em placements de CRM, o Bitrix passa contexto do item
-  // Vamos tentar várias formas sem travar.
+function getDealId() {
+  // Só funciona se o app estiver aberto dentro do card do Negócio (aba Agendar)
   try {
     const info = BX24.placement.info();
-    // Em detail-tab, costuma vir ENTITY_ID / entityId
-    const options = (info && info.options) ? info.options : {};
-    const dealId =
-      options.ENTITY_ID ||
-      options.entityId ||
-      options.ID ||
-      options.id ||
-      null;
-    return { dealId, placementInfo: info };
+    const opt = (info && info.options) ? info.options : {};
+    return opt.ENTITY_ID || opt.entityId || opt.ID || opt.id || null;
   } catch (e) {
-    return { dealId: null, placementInfo: null };
+    return null;
   }
 }
 
-async function createCrmActivity(dealId, subject, startIso, endIso, clientEmail, meetLink) {
-  // Cria atividade no timeline do Negócio. :contentReference[oaicite:1]{index=1}
-  const fields = {
-    OWNER_TYPE_ID: 2,           // 2 = Deal (Negócio)
-    OWNER_ID: Number(dealId),
-    TYPE_ID: 2,                 // 2 = meeting (geralmente)
-    SUBJECT: subject,
-    START_TIME: startIso,
-    END_TIME: endIso,
-    COMPLETED: "N",
-    DESCRIPTION: meetLink ? `Link: ${meetLink}` : "",
-  };
+async function criarAtividadeNoNegocio(dealId, subject, startIso, endIso, meetLink) {
+  return call("crm.activity.add", {
+    fields: {
+      OWNER_TYPE_ID: 2,          // 2 = Deal (Negócio)
+      OWNER_ID: Number(dealId),
+      TYPE_ID: 2,                // meeting
+      SUBJECT: subject,
+      START_TIME: startIso,
+      END_TIME: endIso,
+      COMPLETED: "N",
+      DESCRIPTION: meetLink ? `Meet: ${meetLink}` : ""
+    }
+  });
+}
 
-  if (clientEmail) {
-    fields.COMMUNICATIONS = [{
-      TYPE: "EMAIL",
-      VALUE: clientEmail,
-      ENTITY_TYPE_ID: 3, // 3 = Contact (às vezes), pode variar; deixamos mesmo assim
-      ENTITY_ID: 0
-    }];
+async function criarEventoCalendario(subject, startIso, endIso, meetLink) {
+  return call("calendar.event.add", {
+    type: "user",
+    fields: {
+      NAME: subject,
+      DATE_FROM: startIso,
+      DATE_TO: endIso,
+      DESCRIPTION: meetLink ? `Meet: ${meetLink}` : "",
+      SKIP_TIME: "N"
+    }
+  });
+}
+
+function init() {
+  if (!window.BX24) {
+    setStatus("BX24 não carregou. Abra este app dentro do Bitrix.", "err");
+    return;
   }
 
-  return call("crm.activity.add", { fields });
+  BX24.init(() => {
+    setStatus("Conectado ao Bitrix ✅", "ok");
+    if (btnCriar) btnCriar.disabled = false;
+  });
 }
 
-async function createCalendarEvent(subject, startIso, endIso, clientEmail, meetLink) {
-  // Cria evento no calendário. :contentReference[oaicite:2]{index=2}
-  // Obs: convidados externos por email podem depender das configs de mail/calendar.
-  const eventFields = {
-    NAME: subject,
-    DATE_FROM: startIso,
-    DATE_TO: endIso,
-    DESCRIPTION: meetLink ? `Meet: ${meetLink}` : "",
-    SKIP_TIME: "N",
-  };
-
-  // Alguns портais aceitam GUESTS (IDs internos) e ATTENDEES/EMAILS variam.
-  // A gente mantém minimalista e garante pelo menos o evento + CRM activity.
-  return call("calendar.event.add", { type: "user", ownerId: BX24.getAuth().member_id ? undefined : undefined, fields: eventFields });
-}
-
-document.getElementById("criar").addEventListener("click", async () => {
+async function onCriar() {
   try {
-    showMsg("Criando...", "hint");
+    setStatus("Criando…", "");
 
     const tipo = document.getElementById("tipo").value;
     const inicioVal = document.getElementById("inicio").value;
     const duracao = Number(document.getElementById("duracao").value || 60);
-    const email = document.getElementById("email").value.trim();
-    const meet = document.getElementById("meet").value.trim();
+    const email = (document.getElementById("email").value || "").trim();
+    const meet = (document.getElementById("meet").value || "").trim();
 
     if (!inicioVal) {
-      showMsg("Preenche a data/hora de início.", "err");
+      setStatus("Preencha a data e hora.", "err");
+      return;
+    }
+
+    const dealId = getDealId();
+    if (!dealId) {
+      setStatus("Não identifiquei o ID do Negócio. Abra este app dentro do card do Negócio (aba Agendar).", "err");
       return;
     }
 
     const start = new Date(inicioVal);
     const end = addMinutes(start, duracao);
 
-    // ISO sem segundos já é suficiente na maioria dos casos
     const startIso = start.toISOString();
     const endIso = end.toISOString();
 
-    const { dealId } = getDealContext();
-    if (!dealId) {
-      showMsg("Não consegui identificar o ID do negócio. Abra este app dentro do Negócio (aba/widget).", "err");
-      return;
-    }
-
     const subject = `${tipo} - Reunião`;
 
-    // 1) Registra no CRM (para ficar visível no Negócio)
-    await createCrmActivity(dealId, subject, startIso, endIso, email, meet);
+    // 1) aparece no Negócio
+    await criarAtividadeNoNegocio(dealId, subject, startIso, endIso, meet);
 
-    // 2) Cria evento no calendário (para agenda/Outlook)
-    // (Se teu portal tiver mail/calendar configurado, isso sincroniza bem.)
-    await createCalendarEvent(subject, startIso, endIso, email, meet);
+    // 2) cai no calendário do assessor
+    await criarEventoCalendario(subject, startIso, endIso, meet);
 
-    showMsg("Agendamento criado e registrado no negócio.", "ok");
+    // Observação: convite por e-mail pro cliente depende de mail/calendar do portal.
+    // Por enquanto salvamos o email no texto da atividade (pra não perder).
+    if (email) {
+      await call("crm.activity.add", {
+        fields: {
+          OWNER_TYPE_ID: 2,
+          OWNER_ID: Number(dealId),
+          TYPE_ID: 4, // email
+          SUBJECT: `Cliente convidado: ${email}`,
+          DESCRIPTION: `Convite a enviar para: ${email}\nMeet: ${meet || "(sem link)"}`
+        }
+      });
+    }
+
+    setStatus("Agendamento criado ✅ (Atividade + Calendário)", "ok");
   } catch (e) {
-    showMsg(`Erro: ${e.message}`, "err");
+    setStatus(`Erro: ${e.message}`, "err");
   }
-});
+}
+
+init();
+if (btnCriar) btnCriar.addEventListener("click", onCriar);
