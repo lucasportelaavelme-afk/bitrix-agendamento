@@ -8,6 +8,7 @@ export default function handler(req, res) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Agendar</title>
+
   <style>
     body { font-family: Arial, sans-serif; padding: 16px; }
     .box { border: 1px solid #ddd; border-radius: 10px; padding: 14px; max-width: 720px; }
@@ -20,6 +21,7 @@ export default function handler(req, res) {
     .hint { font-size: 12px; color: #555; margin-top: 8px; }
   </style>
 </head>
+
 <body>
   <div class="box">
     <h2>Agendar reunião</h2>
@@ -43,6 +45,7 @@ export default function handler(req, res) {
           <option value="Delay R2">Delay R2</option>
         </select>
       </div>
+
       <div>
         <label>Duração (min)</label>
         <input id="duracao" type="number" value="60" min="15" step="15" />
@@ -57,6 +60,7 @@ export default function handler(req, res) {
         <label>Email do cliente</label>
         <input id="email" type="email" placeholder="cliente@exemplo.com" />
       </div>
+
       <div>
         <label>Link do Google Meet</label>
         <input id="meet" type="url" placeholder="https://meet.google.com/..." />
@@ -66,11 +70,17 @@ export default function handler(req, res) {
     <label>Observações (opcional)</label>
     <textarea id="obs" rows="3" placeholder="Ex: pauta, contexto, etc."></textarea>
 
-    <button id="criar" disabled>Criar (Calendário + Atividade no Negócio)</button>
-    <div class="hint">Cria evento no calendário do Bitrix e uma atividade no Negócio (se informar ID/Link).</div>
+    <button id="criar" disabled>
+      Criar (Calendário + Atividade no Negócio)
+    </button>
+
+    <div class="hint">
+      Cria evento no calendário do Bitrix e uma atividade no Negócio (se informar ID/Link).
+    </div>
   </div>
 
   <script src="https://api.bitrix24.com/api/v1/"></script>
+
   <script>
     const statusEl = document.getElementById("status");
     const btnCriar = document.getElementById("criar");
@@ -106,8 +116,9 @@ export default function handler(req, res) {
       }
     }
 
-    // Bitrix aceita bem: YYYY-MM-DD HH:MM:SS (hora local)
+    // Formato que teu Bitrix aceita: YYYY-MM-DD HH:MM:SS
     function pad(n) { return String(n).padStart(2, "0"); }
+
     function toBitrixDateTime(d) {
       return (
         d.getFullYear() + "-" +
@@ -128,15 +139,19 @@ export default function handler(req, res) {
           START_TIME: fromDt,
           END_TIME: toDt,
           COMPLETED: "N",
-          DESCRIPTION: desc || ""
+          DESCRIPTION: desc || "",
+
+          // 👉 Obrigatório no teu portal
+          COMMUNICATIONS: []
         }
       });
     }
 
     async function criarEventoCalendario(subject, fromDt, toDt, desc) {
-      if (!currentUserId) throw new Error("Não consegui identificar o usuário logado (ownerId).");
+      if (!currentUserId) {
+        throw new Error("Não consegui identificar o usuário logado (ownerId).");
+      }
 
-      // IMPORTANTE: neste método, os campos são top-level: from/to/name/type/ownerId
       return call("calendar.event.add", {
         type: "user",
         ownerId: String(currentUserId),
@@ -154,10 +169,13 @@ export default function handler(req, res) {
         const u = await call("user.current", {});
         currentUserId = u && (u.ID || u.Id || u.id);
 
-        if (!currentUserId) throw new Error("user.current não retornou ID.");
+        if (!currentUserId) {
+          throw new Error("user.current não retornou ID.");
+        }
 
         setStatus("Conectado ao Bitrix ✅", "ok");
         btnCriar.disabled = false;
+
       } catch (e) {
         setStatus("Erro: " + e.message, "err");
       }
@@ -169,14 +187,18 @@ export default function handler(req, res) {
 
         const dealLink = document.getElementById("dealLink").value.trim();
         const dealIdInput = document.getElementById("dealId").value.trim();
+
         const tipo = document.getElementById("tipo").value;
         const inicioVal = document.getElementById("inicio").value;
         const duracao = Number(document.getElementById("duracao").value || 60);
+
         const email = document.getElementById("email").value.trim();
         const meet = document.getElementById("meet").value.trim();
         const obs = document.getElementById("obs").value.trim();
 
-        if (!inicioVal) return setStatus("Preencha a data e hora.", "err");
+        if (!inicioVal) {
+          return setStatus("Preencha a data e hora.", "err");
+        }
 
         const dealId =
           (dealIdInput ? Number(dealIdInput) : null) ||
@@ -189,22 +211,32 @@ export default function handler(req, res) {
         const toDt = toBitrixDateTime(end);
 
         const subject = tipo + " - Reunião";
+
         const descParts = [];
         if (meet) descParts.push("Meet: " + meet);
         if (email) descParts.push("Cliente: " + email);
         if (obs) descParts.push("Obs: " + obs);
+
         const desc = descParts.join("\\n");
 
-        // 1) Calendário
+        // 1) Cria no calendário
         await criarEventoCalendario(subject, fromDt, toDt, desc);
 
-        // 2) Atividade no Negócio (se tiver)
+        // 2) Cria atividade no negócio (se tiver ID)
         if (dealId) {
           await criarAtividadeNoNegocio(dealId, subject, fromDt, toDt, desc);
-          setStatus("Criado ✅ (Calendário + Atividade no Negócio #" + dealId + ")", "ok");
+
+          setStatus(
+            "Criado ✅ (Calendário + Atividade no Negócio #" + dealId + ")",
+            "ok"
+          );
         } else {
-          setStatus("Criado ✅ (Calendário). Sem Negócio informado, não registrei atividade no CRM.", "ok");
+          setStatus(
+            "Criado ✅ (Calendário). Sem Negócio informado, não registrei atividade no CRM.",
+            "ok"
+          );
         }
+
       } catch (e) {
         setStatus("Erro: " + e.message, "err");
       }
