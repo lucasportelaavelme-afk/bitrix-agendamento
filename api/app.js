@@ -1,12 +1,15 @@
 export default function handler(req, res) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
 
   const html = `<!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Agendar</title>
+  <title>Agendador v4</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 16px; }
     .box { border: 1px solid #ddd; border-radius: 10px; padding: 14px; max-width: 760px; }
@@ -17,16 +20,17 @@ export default function handler(req, res) {
     button { cursor: pointer; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .hint { font-size: 12px; color: #555; margin-top: 8px; }
+    .version { font-size: 12px; color: #777; margin-top: -8px; }
   </style>
 </head>
 <body>
   <div class="box">
-    <h2>Agendar reunião</h2>
-    <div id="status">Carregando…</div>
+    <h2>Agendador</h2>
+    <div class="version">v4</div>
+    <div id="status"></div>
 
-    <label>Link do Negócio (cole a URL do card)</label>
+    <label>Link do Negócio</label>
     <input id="dealLink" type="url" placeholder="https://b24-.../crm/deal/details/1234/" />
-    <div class="hint">Sem esse link, o app cria só o evento no calendário (não cria o To-do no Negócio).</div>
 
     <div class="row">
       <div>
@@ -35,8 +39,6 @@ export default function handler(req, res) {
           <option value="R1">R1</option>
           <option value="R2">R2</option>
           <option value="RA">RA</option>
-          <option value="Delay R1">Delay R1</option>
-          <option value="Delay R2">Delay R2</option>
         </select>
       </div>
       <div>
@@ -51,20 +53,17 @@ export default function handler(req, res) {
         <input id="data" type="date" />
       </div>
       <div>
-        <label>Hora (15 em 15)</label>
+        <label>Hora</label>
         <select id="hora"></select>
       </div>
     </div>
-    <div class="hint">Agora só existe horário 00, 15, 30, 45.</div>
 
     <label>Observações (opcional)</label>
     <textarea id="obs" rows="3" placeholder="Ex: pauta, contexto, etc."></textarea>
 
-    <button id="criar" disabled>Criar (Calendário + To-do no Negócio)</button>
+    <button id="criar" disabled>Criar reunião</button>
 
-    <div class="hint">
-      Cria evento no calendário do Bitrix e cria um To-do no timeline do Negócio.
-    </div>
+    <div class="hint">Cria evento no calendário do Bitrix e registra To-do no Negócio (se o link estiver válido).</div>
   </div>
 
   <script src="https://api.bitrix24.com/api/v1/"></script>
@@ -80,7 +79,7 @@ export default function handler(req, res) {
 
     function setStatus(msg, cls) {
       statusEl.className = cls || "";
-      statusEl.textContent = msg;
+      statusEl.textContent = msg || "";
     }
 
     function call(method, params) {
@@ -107,8 +106,8 @@ export default function handler(req, res) {
       }
     }
 
-    // Bitrix: YYYY-MM-DD HH:MM:SS (hora local)
     function pad(n) { return String(n).padStart(2, "0"); }
+
     function toBitrixDateTime(d) {
       return (
         d.getFullYear() + "-" +
@@ -120,8 +119,6 @@ export default function handler(req, res) {
     }
 
     function buildTimeOptions() {
-      // Ajuste aqui se quiser restringir horário comercial.
-      // Ex: startHour=9 endHour=19 (inclui 19:45)
       const startHour = 0;
       const endHour = 23;
 
@@ -139,38 +136,28 @@ export default function handler(req, res) {
 
     function setDefaultDateTime() {
       const now = new Date();
-      // próximo slot de 15 min
       const step = 15 * 60 * 1000;
       const rounded = new Date(Math.ceil(now.getTime() / step) * step);
 
-      const yyyy = rounded.getFullYear();
-      const mm = pad(rounded.getMonth() + 1);
-      const dd = pad(rounded.getDate());
-      dataEl.value = yyyy + "-" + mm + "-" + dd;
+      dataEl.value =
+        rounded.getFullYear() + "-" + pad(rounded.getMonth() + 1) + "-" + pad(rounded.getDate());
 
-      const hh = pad(rounded.getHours());
-      const min = pad(rounded.getMinutes());
-      const time = hh + ":" + min;
-
-      // garante que existe
-      const option = Array.from(horaEl.options).find(o => o.value === time);
-      horaEl.value = option ? time : "09:00";
+      const time = pad(rounded.getHours()) + ":" + pad(rounded.getMinutes());
+      horaEl.value = Array.from(horaEl.options).some(o => o.value === time) ? time : "09:00";
     }
 
     function buildStartDate() {
-      const dateVal = dataEl.value;   // YYYY-MM-DD
-      const timeVal = horaEl.value;   // HH:MM
+      const dateVal = dataEl.value;
+      const timeVal = horaEl.value;
       if (!dateVal || !timeVal) return null;
 
       const [Y, M, D] = dateVal.split("-").map(Number);
       const [h, m] = timeVal.split(":").map(Number);
-
-      // Data local (sem timezone UTC)
       return new Date(Y, M - 1, D, h, m, 0);
     }
 
     async function criarEventoCalendario(title, fromDt, toDt, desc) {
-      if (!currentUserId) throw new Error("Não identifiquei o usuário logado (ownerId).");
+      if (!currentUserId) throw new Error("Usuário não identificado.");
 
       return call("calendar.event.add", {
         type: "user",
@@ -194,7 +181,8 @@ export default function handler(req, res) {
 
     BX24.init(async () => {
       try {
-        setStatus("Conectando…");
+        // não mostramos status de "conectado"
+        setStatus("");
 
         const u = await call("user.current", {});
         currentUserId = u && (u.ID || u.Id || u.id);
@@ -203,7 +191,6 @@ export default function handler(req, res) {
         buildTimeOptions();
         setDefaultDateTime();
 
-        setStatus("Conectado ao Bitrix ✅", "ok");
         btnCriar.disabled = false;
       } catch (e) {
         setStatus("Erro: " + e.message, "err");
@@ -212,7 +199,7 @@ export default function handler(req, res) {
 
     btnCriar.addEventListener("click", async () => {
       try {
-        setStatus("Criando…");
+        setStatus("");
 
         const dealLink = dealLinkEl.value.trim();
         const dealId = dealLink ? extractDealIdFromLink(dealLink) : null;
@@ -236,11 +223,9 @@ export default function handler(req, res) {
 
         if (dealId) {
           await criarTodoNoNegocio(dealId, title, fromDt, desc);
-          setStatus("Criado ✅ (Calendário + To-do no Negócio #" + dealId + ")", "ok");
-        } else {
-          setStatus("Criado ✅ (Calendário). Link do Negócio inválido/ausente, então não criei To-do no CRM.", "ok");
         }
 
+        setStatus("Reunião criada ✅", "ok");
       } catch (e) {
         setStatus("Erro: " + e.message, "err");
       }
