@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Agendar</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    .box { border: 1px solid #ddd; border-radius: 10px; padding: 14px; max-width: 720px; }
+    .ok { color: #0a7; }
+    .err { color: #b00; }
+    label { display:block; margin-top: 10px; font-weight: 600; }
+    input, select, button, textarea { width: 100%; padding: 10px; margin-top: 6px; }
+    button { cursor: pointer; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .hint { font-size: 12px; color: #555; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Agendar reunião</h2>
+    <div id="status">Carregando…</div>
+
+    <label>Link do Negócio (cole a URL do card)</label>
+    <input id="dealLink" type="url" placeholder="https://b24-.../crm/deal/details/1234/" />
+    <div class="hint">Se não quiser colar link, pode preencher o ID abaixo.</div>
+
+    <label>ID do Negócio (opcional)</label>
+    <input id="dealId" type="number" placeholder="1234" />
+
+    <div class="row">
+      <div>
+        <label>Tipo</label>
+        <select id="tipo">
+          <option value="R1">R1</option>
+          <option value="R2">R2</option>
+          <option value="RA">RA</option>
+          <option value="Delay R1">Delay R1</option>
+          <option value="Delay R2">Delay R2</option>
+        </select>
+      </div>
+      <div>
+        <label>Duração (min)</label>
+        <input id="duracao" type="number" value="60" min="15" step="15" />
+      </div>
+    </div>
+
+    <label>Data e hora (início)</label>
+    <input id="inicio" type="datetime-local" />
+
+    <div class="row">
+      <div>
+        <label>Email do cliente</label>
+        <input id="email" type="email" placeholder="cliente@exemplo.com" />
+      </div>
+      <div>
+        <label>Link do Google Meet</label>
+        <input id="meet" type="url" placeholder="https://meet.google.com/..." />
+      </div>
+    </div>
+
+    <label>Observações (opcional)</label>
+    <textarea id="obs" rows="3" placeholder="Ex: pauta, contexto, etc."></textarea>
+
+    <button id="criar" disabled>Criar (Calendário + Atividade no Negócio)</button>
+
+    <div class="hint">
+      Resultado: cria evento no calendário do Bitrix e registra uma atividade no Negócio (se ID/Link informado).
+    </div>
+  </div>
+
+  <script src="https://api.bitrix24.com/api/v1/"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
