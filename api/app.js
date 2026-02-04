@@ -45,9 +45,17 @@ export default function handler(req, res) {
       </div>
     </div>
 
-    <label>Data e hora (início) — 15 em 15 min</label>
-    <input id="inicio" type="datetime-local" step="900" />
-    <div class="hint">O app ajusta automaticamente para o próximo intervalo de 15 minutos.</div>
+    <div class="row">
+      <div>
+        <label>Data</label>
+        <input id="data" type="date" />
+      </div>
+      <div>
+        <label>Hora (15 em 15)</label>
+        <select id="hora"></select>
+      </div>
+    </div>
+    <div class="hint">Agora só existe horário 00, 15, 30, 45.</div>
 
     <label>Observações (opcional)</label>
     <textarea id="obs" rows="3" placeholder="Ex: pauta, contexto, etc."></textarea>
@@ -65,7 +73,8 @@ export default function handler(req, res) {
     const btnCriar = document.getElementById("criar");
 
     const dealLinkEl = document.getElementById("dealLink");
-    const inicioEl = document.getElementById("inicio");
+    const dataEl = document.getElementById("data");
+    const horaEl = document.getElementById("hora");
 
     let currentUserId = null;
 
@@ -110,22 +119,54 @@ export default function handler(req, res) {
       );
     }
 
-    // Ajusta para o próximo slot de 15min
-    function roundToNext15(d) {
-      const ms = d.getTime();
-      const step = 15 * 60 * 1000;
-      const rounded = Math.ceil(ms / step) * step;
-      return new Date(rounded);
+    function buildTimeOptions() {
+      // Ajuste aqui se quiser restringir horário comercial.
+      // Ex: startHour=9 endHour=19 (inclui 19:45)
+      const startHour = 0;
+      const endHour = 23;
+
+      horaEl.innerHTML = "";
+      for (let h = startHour; h <= endHour; h++) {
+        for (const m of [0, 15, 30, 45]) {
+          const v = pad(h) + ":" + pad(m);
+          const opt = document.createElement("option");
+          opt.value = v;
+          opt.textContent = v;
+          horaEl.appendChild(opt);
+        }
+      }
     }
 
-    function setDatetimeLocal(el, d) {
-      const v =
-        d.getFullYear() + "-" +
-        pad(d.getMonth() + 1) + "-" +
-        pad(d.getDate()) + "T" +
-        pad(d.getHours()) + ":" +
-        pad(d.getMinutes());
-      el.value = v;
+    function setDefaultDateTime() {
+      const now = new Date();
+      // próximo slot de 15 min
+      const step = 15 * 60 * 1000;
+      const rounded = new Date(Math.ceil(now.getTime() / step) * step);
+
+      const yyyy = rounded.getFullYear();
+      const mm = pad(rounded.getMonth() + 1);
+      const dd = pad(rounded.getDate());
+      dataEl.value = yyyy + "-" + mm + "-" + dd;
+
+      const hh = pad(rounded.getHours());
+      const min = pad(rounded.getMinutes());
+      const time = hh + ":" + min;
+
+      // garante que existe
+      const option = Array.from(horaEl.options).find(o => o.value === time);
+      horaEl.value = option ? time : "09:00";
+    }
+
+    function buildStartDate() {
+      const dateVal = dataEl.value;   // YYYY-MM-DD
+      const timeVal = horaEl.value;   // HH:MM
+      if (!dateVal || !timeVal) return null;
+
+      const [Y, M, D] = dateVal.split("-").map(Number);
+      const [h, m] = timeVal.split(":").map(Number);
+
+      // Data local (sem timezone UTC)
+      return new Date(Y, M - 1, D, h, m, 0);
     }
 
     async function criarEventoCalendario(title, fromDt, toDt, desc) {
@@ -159,25 +200,14 @@ export default function handler(req, res) {
         currentUserId = u && (u.ID || u.Id || u.id);
         if (!currentUserId) throw new Error("user.current não retornou ID.");
 
-        // Sugere horário já redondo
-        if (!inicioEl.value) {
-          const d = roundToNext15(new Date());
-          setDatetimeLocal(inicioEl, d);
-        }
+        buildTimeOptions();
+        setDefaultDateTime();
 
         setStatus("Conectado ao Bitrix ✅", "ok");
         btnCriar.disabled = false;
       } catch (e) {
         setStatus("Erro: " + e.message, "err");
       }
-    });
-
-    // Se escolher horário quebrado, arredonda
-    inicioEl.addEventListener("change", () => {
-      if (!inicioEl.value) return;
-      const d = new Date(inicioEl.value);
-      const r = roundToNext15(d);
-      setDatetimeLocal(inicioEl, r);
     });
 
     btnCriar.addEventListener("click", async () => {
@@ -188,13 +218,12 @@ export default function handler(req, res) {
         const dealId = dealLink ? extractDealIdFromLink(dealLink) : null;
 
         const tipo = document.getElementById("tipo").value;
-        const inicioVal = inicioEl.value;
         const duracao = Number(document.getElementById("duracao").value || 60);
         const obs = document.getElementById("obs").value.trim();
 
-        if (!inicioVal) return setStatus("Preencha a data e hora.", "err");
+        const start = buildStartDate();
+        if (!start) return setStatus("Selecione data e hora.", "err");
 
-        const start = roundToNext15(new Date(inicioVal));
         const end = addMinutes(start, duracao);
 
         const fromDt = toBitrixDateTime(start);
@@ -203,10 +232,8 @@ export default function handler(req, res) {
         const title = tipo + " - Reunião";
         const desc = obs ? ("Obs: " + obs) : "";
 
-        // 1) Calendário
         await criarEventoCalendario(title, fromDt, toDt, desc);
 
-        // 2) To-do no Negócio (se tiver link válido)
         if (dealId) {
           await criarTodoNoNegocio(dealId, title, fromDt, desc);
           setStatus("Criado ✅ (Calendário + To-do no Negócio #" + dealId + ")", "ok");
