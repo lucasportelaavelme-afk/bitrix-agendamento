@@ -1,5 +1,5 @@
 export default function handler(req, res) {
-  // Aceita GET/POST e devolve HTML sempre
+  // Aceita GET/POST e devolve HTML sempre (Bitrix testa "servidor" assim)
   res.setHeader("Content-Type", "text/html; charset=utf-8");
 
   const html = `<!doctype html>
@@ -95,35 +95,49 @@ export default function handler(req, res) {
 
     function extractDealIdFromLink(url) {
       try {
-        const m = String(url).match(/\\/deal\\/details\\/(\\d+)\\//i) || String(url).match(/\\/deal\\/details\\/(\\d+)/i);
+        const m =
+          String(url).match(/\\/deal\\/details\\/(\\d+)\\//i) ||
+          String(url).match(/\\/deal\\/details\\/(\\d+)/i);
         return m ? Number(m[1]) : null;
       } catch {
         return null;
       }
     }
 
-    async function criarAtividadeNoNegocio(dealId, subject, startIso, endIso, desc) {
+    // Bitrix gosta desse formato: YYYY-MM-DD HH:MM:SS (hora local)
+    function pad(n) { return String(n).padStart(2, "0"); }
+    function toBitrixDateTime(d) {
+      return (
+        d.getFullYear() + "-" +
+        pad(d.getMonth() + 1) + "-" +
+        pad(d.getDate()) + " " +
+        pad(d.getHours()) + ":" +
+        pad(d.getMinutes()) + ":00"
+      );
+    }
+
+    async function criarAtividadeNoNegocio(dealId, subject, fromDt, toDt, desc) {
       return call("crm.activity.add", {
         fields: {
-          OWNER_TYPE_ID: 2,
+          OWNER_TYPE_ID: 2,          // Deal
           OWNER_ID: Number(dealId),
-          TYPE_ID: 2,
+          TYPE_ID: 2,                // meeting
           SUBJECT: subject,
-          START_TIME: startIso,
-          END_TIME: endIso,
+          START_TIME: fromDt,
+          END_TIME: toDt,
           COMPLETED: "N",
           DESCRIPTION: desc || ""
         }
       });
     }
 
-    async function criarEventoCalendario(subject, startIso, endIso, desc) {
+    async function criarEventoCalendario(subject, fromDt, toDt, desc) {
       return call("calendar.event.add", {
         type: "user",
         fields: {
           NAME: subject,
-          DATE_FROM: startIso,
-          DATE_TO: endIso,
+          DATE_FROM: fromDt,
+          DATE_TO: toDt,
           DESCRIPTION: desc || "",
           SKIP_TIME: "N"
         }
@@ -157,8 +171,8 @@ export default function handler(req, res) {
         const start = new Date(inicioVal);
         const end = addMinutes(start, duracao);
 
-        const startIso = start.toISOString();
-        const endIso = end.toISOString();
+        const fromDt = toBitrixDateTime(start);
+        const toDt = toBitrixDateTime(end);
 
         const subject = tipo + " - Reunião";
         const descParts = [];
@@ -167,10 +181,12 @@ export default function handler(req, res) {
         if (obs) descParts.push("Obs: " + obs);
         const desc = descParts.join("\\n");
 
-        await criarEventoCalendario(subject, startIso, endIso, desc);
+        // 1) Calendário
+        await criarEventoCalendario(subject, fromDt, toDt, desc);
 
+        // 2) Atividade no Negócio (se tiver)
         if (dealId) {
-          await criarAtividadeNoNegocio(dealId, subject, startIso, endIso, desc);
+          await criarAtividadeNoNegocio(dealId, subject, fromDt, toDt, desc);
           setStatus("Criado ✅ (Calendário + Atividade no Negócio #" + dealId + ")", "ok");
         } else {
           setStatus("Criado ✅ (Calendário). Sem Negócio informado, não registrei atividade no CRM.", "ok");
