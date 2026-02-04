@@ -75,6 +75,8 @@ export default function handler(req, res) {
     const statusEl = document.getElementById("status");
     const btnCriar = document.getElementById("criar");
 
+    let currentUserId = null;
+
     function setStatus(msg, cls) {
       statusEl.className = cls || "";
       statusEl.textContent = msg;
@@ -104,7 +106,7 @@ export default function handler(req, res) {
       }
     }
 
-    // Bitrix gosta desse formato: YYYY-MM-DD HH:MM:SS (hora local)
+    // Bitrix aceita bem: YYYY-MM-DD HH:MM:SS (hora local)
     function pad(n) { return String(n).padStart(2, "0"); }
     function toBitrixDateTime(d) {
       return (
@@ -132,21 +134,33 @@ export default function handler(req, res) {
     }
 
     async function criarEventoCalendario(subject, fromDt, toDt, desc) {
+      if (!currentUserId) throw new Error("Não consegui identificar o usuário logado (ownerId).");
+
+      // IMPORTANTE: neste método, os campos são top-level: from/to/name/type/ownerId
       return call("calendar.event.add", {
         type: "user",
-        fields: {
-          NAME: subject,
-          DATE_FROM: fromDt,
-          DATE_TO: toDt,
-          DESCRIPTION: desc || "",
-          SKIP_TIME: "N"
-        }
+        ownerId: String(currentUserId),
+        name: subject,
+        description: desc || "",
+        from: fromDt,
+        to: toDt
       });
     }
 
-    BX24.init(() => {
-      setStatus("Conectado ao Bitrix ✅", "ok");
-      btnCriar.disabled = false;
+    BX24.init(async () => {
+      try {
+        setStatus("Conectando…");
+
+        const u = await call("user.current", {});
+        currentUserId = u && (u.ID || u.Id || u.id);
+
+        if (!currentUserId) throw new Error("user.current não retornou ID.");
+
+        setStatus("Conectado ao Bitrix ✅", "ok");
+        btnCriar.disabled = false;
+      } catch (e) {
+        setStatus("Erro: " + e.message, "err");
+      }
     });
 
     btnCriar.addEventListener("click", async () => {
