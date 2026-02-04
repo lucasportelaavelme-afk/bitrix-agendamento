@@ -1,0 +1,13 @@
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self' https://b24-734rsa.bitrix24.com.br https://*.bitrix24.com.br https://*.bitrix24.com"
+        }
+      ]
+    }
+  ]
+}
